@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Settings>
+	<!-- CMSS server connection string -->
+	<CMSSConnectionString>Data Source=tcp:MY-CMS-SERVER.local;Initial Catalog=msdb;Connection Timeout=5;Integrated Security=True;Application Name=PowerShell;</CMSSConnectionString>
+	<!-- Root server group name -->
+	<CMSSRootGroupName>MyRootGroupName</CMSSRootGroupName>
+	<!-- Connection string template to connect to each SQL Server -->
+	<EndServerConnectionStringTemplate>Data Source=tcp:{0};Initial Catalog={1};Connection Timeout=5;Integrated Security=True;Application Name=PowerShell;</EndServerConnectionStringTemplate>
+	<!-- File contains query to select databases on each server in a server group. If empty, database_list_query.sql file will be used -->
+	<DatabaseListQueryFile></DatabaseListQueryFile>
+	<!-- Wait time (in seconds) before terminating the attempt to execute a command -->
+	<CommandTimeout>25</CommandTimeout>
+	<!-- If true, batch mode will be used and no results will be saved. If false, query mode will be used -->
+	<BatchMode>False</BatchMode>
+	<!-- File contains main query to run on each server and database. If empty, command.sql file will be used -->
+	<CommandFile></CommandFile>
+	<!-- File contains main batch to run on each server and database. If empty, batch.sql file will be used -->
+	<BatchFile></BatchFile>
+	<!-- Full path to output CSV file name. If empty, file will be created in the same directory -->
+	<OutputFile></OutputFile>
+	<!-- Check the connection to every server before running the command -->
+	<CheckConnectivity>True</CheckConnectivity>
+	<!-- List of excluded servers -->
+	<ExcludedServer>
+<!--
+	<Server>AAA</Server>
+	<Server>BBB</Server>
+-->
+	</ExcludedServer>
+</Settings>
