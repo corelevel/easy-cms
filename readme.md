@@ -1,4 +1,4 @@
-# SQL Server CMS helper script
+# SQL Server CMS helper tool
 - This script will allow you to define complex filters for databases and servers
 - It will run your query on each server and each database and save results to a *csv* file(in command mode)
 
