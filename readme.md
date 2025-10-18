@@ -3,9 +3,9 @@
 - It will run your query on each server and each database and save results into a *csv* file(in command mode)
 - The output *csv* file will have this structure:
 
-| CMSS_GROUP_NAME | CMSS_SERVER_NAME          |          SERVER_NAME          | DATABASE_NAME | Column name 1 | ... | Column name N |
-| --------------- | ------------------------- | :---------------------------: | ------------- | ------------- | --- | ------------- |
-| CMS group name  | Name of the server in CMS | Real SQL Server instance name | Database name | Value 1       | ... | Value N       |
+| CMSS_GROUP_NAME | CMSS_SERVER_NAME          |          SERVER_NAME          | DATABASE_NAME | Column 1 | ... | Column N |
+| --------------- | ------------------------- | :---------------------------: | ------------- | -------- | --- | -------- |
+| CMS group name  | Name of the server in CMS | Real SQL Server instance name | Database name | Value 1  | ... | Value N  |
 
 ## Getting started
 - Modify *settings.xml* file
