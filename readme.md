@@ -16,3 +16,6 @@
 - Modify *database_list_query.sql* to define a filter for databases on each server
 - Modify *command.sql* with your query
 - Run *cms.ps1* script
+
+## License
+[MIT License](http://en.wikipedia.org/wiki/MIT_License)
