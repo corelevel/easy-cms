@@ -321,7 +321,7 @@ function Get-DatabaseList {
 		| Select-Object -ExpandProperty name
 }
 
-function Invoke-CMS {
+function Invoke-EasyCMS {
 	<#
 	.SYNOPSIS
 		Executes a SQL command or batch across multiple SQL Server instances registered in CMS
@@ -441,6 +441,6 @@ function Invoke-CMS {
 Clear-Host
 
 [string]$configFile = Join-Path $PSScriptRoot "config.json"
-Invoke-CMS -ConfigFile $configFile `
+Invoke-EasyCMS -ConfigFile $configFile `
 	-Verbose `
 	#-WhatIf

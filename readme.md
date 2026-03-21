@@ -1,4 +1,4 @@
-# Invoke-CMS
+# Easy-CMS
 
 Execute SQL scripts across multiple SQL Server instances using [Central Management Server (CMS)](https://learn.microsoft.com/en-us/ssms/register-servers/register-servers).
 
