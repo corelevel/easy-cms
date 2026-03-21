@@ -34,7 +34,7 @@ Install-Module SqlServer
     "connStrTemplate": "Data Source={0};Initial Catalog={1};Integrated Security=True;Application Name=cmss;",
     "testConnectivity": true,
     "queryTimeout": 25,
-    "dbListQueryFile": "",
+    "dbListFile": "",
     "cmdFile": "",
     "batchFile": "",
     "outputFile": "",
@@ -78,7 +78,7 @@ By default, the script looks for the following files in the script directory:
 You can override these defaults by specifying custom paths in the configuration file. For example:
 ```json
 {
-  "dbListQueryFile": "C:\\scripts\\my_db_list.sql",
+  "dbListFile": "C:\\scripts\\my_db_list.sql",
   "cmdFile": "C:\\scripts\\my_command.sql",
   "batchFile": "C:\\scripts\\my_batch.sql",
   "outputFile": "C:\\output\\results.csv"
