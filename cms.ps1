@@ -35,14 +35,14 @@ function Read-Config {
 		OutputFile = $null
 	}
 
-	$dbListQueryFile = $json.dbListQueryFile
-	if ([string]::IsNullOrEmpty($dbListQueryFile)) {
-		$dbListQueryFile = Join-Path $PSScriptRoot "database_list_query.sql"
+	$dbListFile = $json.dbListFile
+	if ([string]::IsNullOrEmpty($dbListFile)) {
+		$dbListFile = Join-Path $PSScriptRoot "database_list_query.sql"
 	}
-	if (-not (Test-Path $dbListQueryFile -PathType Leaf)) {
-		throw "Database list query file not found: $dbListQueryFile"
+	if (-not (Test-Path $dbListFile -PathType Leaf)) {
+		throw "Database list query file not found: $dbListFile"
 	}
-	$config.DbListQuery = Get-Content -Path $dbListQueryFile -Raw
+	$config.DbListQuery = Get-Content -Path $dbListFile -Raw
 
 	if ($config.BatchMode) {
 		$batchFile = $json.batchFile
@@ -166,7 +166,6 @@ function Test-Connectivity {
 			-f $server.CmsName, $server.InstanceName)
 		$connStr = $ConnStrTemplate -f $server.InstanceName, "master"
 		Invoke-Sqlcmd -ConnectionString $connStr -Query "select 1" -AbortOnError | Out-Null
-		Write-LogMessage -Message "Success!"
 	}
 }
 
@@ -187,7 +186,7 @@ function Invoke-CmsServerBatch {
 	foreach ($database in $DatabaseList) {
 		$databaseNum++
 
-		Write-LogMessage -Message ("  Running the batch on database [{0}] (database {1} of {2}) ..." `
+		Write-LogMessage -Message ("  Running batch file on database {0} (database {1} of {2}) ..." `
 			-f $database, $databaseNum, $DatabaseList.Count)
 
 		$connStr = $Config.ConnStrTemplate -f $InstanceName, $database
@@ -237,7 +236,7 @@ function Invoke-CmsServerCommand {
 		foreach ($database in $DatabaseList) {
 			$databaseNum++
 
-			Write-LogMessage -Message ("  Running the query on database [{0}] (database {1} of {2}) ..." `
+			Write-LogMessage -Message ("  Running command file on database {0} (database {1} of {2}) ..." `
 				-f $database, $databaseNum, $DatabaseList.Count)
 
 			$sqlConn.ChangeDatabase($database)
@@ -372,7 +371,7 @@ function Invoke-CMS {
 		$dryRun = $true
 		$connStrParser = [SqlConnectionStringBuilder]::new($config.CmsConnStr)
 		$mode = if ($config.BatchMode) { "Batch" } else { "Command" }
-		$target = "Using CMS: {0}, Mode: {1}" -f $connStrParser.DataSource, $mode
+		$target = "CMS: {0}, Mode: {1}" -f $connStrParser.DataSource, $mode
 
 		if ($PSCmdlet.ShouldProcess($target)) {
 			$dryRun = $false
@@ -443,5 +442,5 @@ Clear-Host
 
 [string]$configFile = Join-Path $PSScriptRoot "config.json"
 Invoke-CMS -ConfigFile $configFile `
-	-WhatIf `
-	-Verbose
+	-Verbose `
+	#-WhatIf

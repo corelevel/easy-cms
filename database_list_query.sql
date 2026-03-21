@@ -20,5 +20,5 @@ from	sys.dm_hadr_availability_group_states st
 		join sys.availability_databases_cluster db
 		on db.group_id = gr.group_id
 where 1 = 1
-	and db.[name] not in (N'distribution')
+	and db.[database_name] not in (N'distribution')
 	and st.primary_replica = @@servername
