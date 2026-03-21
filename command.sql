@@ -1,7 +1,6 @@
 set nocount on
-set transaction isolation level read uncommitted
 
--- just an example
+-- Just an example
 select	[name] [user_database_name]
 from	sys.databases
 where is_query_store_on = 0

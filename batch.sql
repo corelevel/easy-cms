@@ -1,6 +1,6 @@
 set nocount on
-set transaction isolation level read uncommitted
 go
+-- Just an example
 select @@servername
 go
 select @@servername

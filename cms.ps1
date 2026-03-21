@@ -1,356 +1,447 @@
-Clear-Host
+using namespace System.Data.SqlClient
 
-function Write-LogMessage
-{
-    Param
-    (
-        [parameter(Mandatory)]
-        [string]$Message,
-        [parameter()]
-        [System.ConsoleColor]$Color = [System.ConsoleColor]::White
-    )
-    $timeStamp = (Get-Date).ToString('[MM/dd/yy HH:mm:ss.ff]')
-    $logMessage = $timeStamp + ' ' + $Message
-
-    Write-Host $logMessage -ForegroundColor $Color
+function Write-LogMessage {
+	Param (
+		[parameter(Mandatory)]
+		[string]$Message
+	)
+	$timeStamp = (Get-Date).ToString("[MM/dd/yy HH:mm:ss.ff]")
+	Write-Verbose "$timeStamp $Message"
 }
 
-class ScriptSettings
-{
-    [string]$CMSSServerName
-    [string]$CMSSRootGroupName
-    [string]$CMSSConnectionString
-    [string]$DatabaseListQuery
-    [string]$Command
-    [string]$OutputFile
-    [string]$EndServerConnectionStringTemplate
-    [int]$CommandTimeout
-    [bool]$CheckConnectivity
-    [System.Collections.Generic.List[string]]$ExcludedServerList
-    
-    ScriptSettings([string]$settingsFile)
-    {
-        $xml = [System.Xml.XmlDocument]::new()
-        $xml.Load($settingsFile)
+function Read-Config {
+	[CmdletBinding()]
+	param (
+		[Parameter(Mandatory)]
+		[string]$ConfigFile
+	)
 
-        $this.CMSSServerName = $xml.Settings.CMSSServerName
-        $this.CMSSRootGroupName = $xml.Settings.CMSSRootGroupName
-        $this.CMSSConnectionString = $xml.Settings.CMSSConnectionString
-        $this.CommandTimeout = [int]$xml.Settings.CommandTimeout
+	if (-not (Test-Path $ConfigFile -PathType Leaf)) {
+		throw "Configuration file not found: $ConfigFile"
+	}
 
-        if ($xml.Settings.DatabaseListQueryFile) {
-            $this.DatabaseListQuery = Get-Content -Path $xml.Settings.DatabaseListQueryFile
-        }
-        else {
-            $this.DatabaseListQuery = Get-Content -Path ($PSScriptRoot + '\database_list_query.sql')
-        }
+	$json = Get-Content $ConfigFile -Raw | ConvertFrom-Json
 
-        if ($xml.Settings.CommandFile) {
-            $this.Command = Get-Content -Path $xml.Settings.CommandFile
-        }
-        else {
-            $this.Command = Get-Content -Path ($PSScriptRoot + '\command.sql')
-        }
+	$config = [PSCustomObject]@{
+		CmsConnStr = $json.cmsConnStr
+		CmsGroupName = $json.cmsGroupName
+		BatchMode = $json.batchMode
+		ConnStrTemplate = $json.connStrTemplate
+		TestConnectivity = $json.testConnectivity
+		QueryTimeout = $json.queryTimeout
+		ExcludeCmsNames = $json.excludeCmsNames
+		DbListQuery = $null
+		Cmd = $null
+		OutputFile = $null
+	}
 
-        if (-not $this.OutputFile) {
-            $this.OutputFile = $PSScriptRoot + '\output_{0:yyyy-MM-dd}T{0:HH-mm-ss}.csv' -f (Get-Date)
-        }
+	$dbListQueryFile = $json.dbListQueryFile
+	if ([string]::IsNullOrEmpty($dbListQueryFile)) {
+		$dbListQueryFile = Join-Path $PSScriptRoot "database_list_query.sql"
+	}
+	if (-not (Test-Path $dbListQueryFile -PathType Leaf)) {
+		throw "Database list query file not found: $dbListQueryFile"
+	}
+	$config.DbListQuery = Get-Content -Path $dbListQueryFile -Raw
 
-        $this.EndServerConnectionStringTemplate = $xml.Settings.EndServerConnectionStringTemplate
-        if ($xml.Settings.CheckConnectivity -eq [bool]::TrueString) {
-            $this.CheckConnectivity = $true
-        }
-        else {
-            $this.CheckConnectivity = $false
-        }
-        
-        $this.ExcludedServerList = [System.Collections.Generic.List[string]]::new()
-        foreach($server in $xml.Settings.ExcludedServer.Server) {
-            [void]$this.ExcludedServerList.Add($server)
-        }
-    }
+	if ($config.BatchMode) {
+		$batchFile = $json.batchFile
+		if ([string]::IsNullOrEmpty($batchFile)) {
+			$batchFile = Join-Path $PSScriptRoot "batch.sql"
+		}
+		if (-not (Test-Path $batchFile -PathType Leaf)) {
+			throw "Batch file not found: $batchFile"
+		}
+		$config.Cmd = Get-Content -Path $batchFile -Raw
+	}
+	else {
+		$cmdFile = $json.cmdFile
+		if ([string]::IsNullOrEmpty($cmdFile)) {
+			$cmdFile = Join-Path $PSScriptRoot "command.sql"
+		}
+		if (-not (Test-Path $cmdFile -PathType Leaf)) {
+			throw "Command file not found: $cmdFile"
+		}
+		$config.Cmd = Get-Content -Path $cmdFile -Raw
+	}
+
+	if ([string]::IsNullOrEmpty($json.outputFile)) {
+		$config.OutputFile = Join-Path $PSScriptRoot ("output_{0:yyyy-MM-dd_HH-mm-ss}.csv" -f (Get-Date))
+	}
+	else {
+		$config.OutputFile = $json.outputFile
+	}
+
+	$config
 }
 
-class SQLServer
-{
-    [int]$Id
-    [string]$Name
-    [string]$ServerName
-    [string]$Description
-    [string]$GroupName
-    [string]$Path
-}
+function Get-CmsServerList {
+	[CmdletBinding()]
+	param (
+		[Parameter(Mandatory)]
+		[string]$ConnStr,
 
-class CMSS
-{
-    [string]$ConnectionString
-    [System.Collections.Generic.List[SQLServer]]$ServerList
+		[string]$GroupName
+	)
 
-    CMSS([string]$connectionString)
-    {
-        $this.ConnectionString = $connectionString
-        $this.ServerList = [System.Collections.Generic.List[SQLServer]]::new()
-    }
+	$sqlConn = $null
+	$sqlCmd = $null
+	$sqlReader = $null
 
-    ReadServerList([string]$groupName)
-    {
-        $this.ServerList.Clear()
+	try {
+		$sqlConn = [SqlConnection]::new()
+		$sqlConn.ConnectionString = $ConnStr
+		$sqlConn.Open()
 
-        Write-LogMessage -Message ('Reading server list from CMSS server')
-
-        if ([string]::IsNullOrEmpty($groupName)) {
-            $groupName = 'DatabaseEngineServerGroup'
-        }
-
-        $sqlConnection = [System.Data.SqlClient.SQLConnection]::new()
-        $sqlConnection.ConnectionString = $this.ConnectionString
-        $sqlConnection.Open()
-
-        [string]$command = 'set nocount on
-declare @groups table (server_group_id int not null, [name] sysname not null, [path] nvarchar(500) not null, primary key(server_group_id));
+        [string]$command = @"
+set nocount on
+create table #groups (server_group_id int not null, [name] sysname not null, [path] nvarchar(4000) not null);
 
 with groups_hi (server_group_id, [name], [path]) as
 (
-select	server_group_id, [name], cast([name] as nvarchar(500))
+select	server_group_id, [name], cast([name] as nvarchar(4000))
 from	dbo.sysmanagement_shared_server_groups_internal
 where [name] = @name
 union all
-select	gr.server_group_id, gr.[name], cast(hi.[path] + ''\'' + gr.[name] as nvarchar(500))
+select	gr.server_group_id, gr.[name], cast(hi.[path] + '\' + gr.[name] as nvarchar(4000))
 from	dbo.sysmanagement_shared_server_groups_internal gr
 		join groups_hi hi
 		on gr.parent_id = hi.server_group_id
 )
-insert @groups(server_group_id, [name], [path])
-select * from groups_hi
+insert #groups(server_group_id, [name], [path])
+select	server_group_id, [name], [path]
+from	groups_hi
 
-select	se.server_id, se.[name], se.server_name, se.[description], t.[name] group_name, t.[path]
-from	@groups t
+select	se.[name], se.server_name, t.[name] group_name
+from	#groups t
 		join dbo.sysmanagement_shared_server_groups_internal gr
 		on gr.server_group_id = t.server_group_id
 		join dbo.sysmanagement_shared_registered_servers_internal se
 		on se.server_group_id = t.server_group_id
-order by se.server_name'
+order by se.server_name
+"@
 
-        $sqlCommand = [System.Data.SqlClient.SqlCommand]::new($command, $sqlConnection)
-        $sqlCommand.CommandType = [System.Data.CommandType]::Text
-        $pGroupName = $sqlCommand.Parameters.Add('@name', [System.Data.SqlDbType]::VarChar)
-        $pGroupName.Value = $groupName
-        $sqlReader = $sqlCommand.ExecuteReader()
+		$sqlCmd = [SqlCommand]::new($command, $sqlConn)
+		$sqlCmd.CommandType = [System.Data.CommandType]::Text
+		$pGroupName = $sqlCmd.Parameters.Add("@name", [System.Data.SqlDbType]::VarChar, 128)
+		$pGroupName.Value = if ([string]::IsNullOrEmpty($GroupName)) { "DatabaseEngineServerGroup" } else { $GroupName }
+		$sqlReader = $sqlCmd.ExecuteReader()
 
         if ($sqlReader.HasRows) {
             while ($sqlReader.Read()) {
-                $server = [SQLServer]::new()
-
-                if ($sqlReader['server_id'] -isnot [DBNull]) {
-                    $server.Id = $sqlReader['server_id']
-                }
-                if ($sqlReader['name'] -isnot [DBNull]) {
-                    $server.Name = $sqlReader['name']
-                }
-                if ($sqlReader['server_name'] -isnot [DBNull]) {
-                    $server.ServerName = $sqlReader['server_name']
-                }
-                if ($sqlReader['description'] -isnot [DBNull]) {
-                    $server.Description = $sqlReader['description']
-                }
-                if ($sqlReader['group_name'] -isnot [DBNull]) {
-                    $server.GroupName = $sqlReader['group_name']
-                }
-                if ($sqlReader['path'] -isnot [DBNull]) {
-                    $server.Path = $sqlReader['path']
-                }
-
-                [void]$this.serverList.Add($server)
+				[PSCustomObject]@{
+					CmsName = $sqlReader["name"].ToLower()
+					InstanceName = $sqlReader["server_name"].ToLower()
+					GroupName = $sqlReader["group_name"].ToLower()
+					Excluded = $false
+				}
             }
         }
-
-        $sqlReader.Close()
-        $sqlConnection.Close()
-
-        Write-LogMessage -Message ('Total {0} server(s) found' -f $this.serverList.Count)
-    }
+	}
+	finally {
+		if ($sqlReader) { $sqlReader.Close(); $sqlReader.Dispose() }
+		if ($sqlCmd) { $sqlCmd.Dispose() }
+		if ($sqlConn) { $sqlConn.Close(); $sqlConn.Dispose() }
+	}
 }
 
-class CommandExecutor
-{
-    [System.Collections.Generic.List[SQLServer]]$ServerList
-    [System.Collections.Generic.List[string]]$ExcludedServerList
-    [string]$DatabaseListQuery
-    [string]$Command
-    [string]$OutputFile
-    [string]$ConnectionStringTemplate
-    [int]$CommandTimeout
-    [int]$RowCountThreshold = 1000
+function Test-Connectivity {
+	[CmdletBinding()]
+	param (
+		[Parameter(Mandatory)]
+		[string]$ConnStrTemplate,
 
-    CommandExecutor([System.Collections.Generic.List[SQLServer]]$serverList, [ScriptSettings]$settings)
-    {
-        $this.ServerList = $serverList
-        $this.ExcludedServerList = $settings.ExcludedServerList
-        $this.DatabaseListQuery = $settings.DatabaseListQuery
-        $this.Command = $settings.Command
-        $this.OutputFile = $settings.OutputFile
-        $this.ConnectionStringTemplate = $settings.EndServerConnectionStringTemplate
-        $this.CommandTimeout = $settings.CommandTimeout
-    }
+		[Parameter(Mandatory)]
+		$ServerList
+	)
 
-    CheckConnectivity()
-    {
-        foreach ($server in $this.ServerList) {
-            if ($this.IsServerExcluded($server.ServerName)) {
-                Write-LogMessage -Message ('Excluded server {0} ...' -f $server.ServerName) -color ([System.ConsoleColor]::Yellow)
-                Write-LogMessage -Message 'Skipped!' -color ([System.ConsoleColor]::Yellow)
-                continue
-            }
+	foreach ($server in $serverList) {
+		if ($server.Excluded) {
+			Write-LogMessage -Message ("Skipping excluded server: {0} instance: {1}" `
+				-f $server.CmsName, $server.InstanceName)
+			continue
+		}
 
-            Write-LogMessage -Message ('Checking connection to {0} database server ...' -f $server.ServerName)
-
-            $sqlConnection = [System.Data.SqlClient.SQLConnection]::new()
-            $sqlConnection.ConnectionString = $this.ConnectionStringTemplate -f $server.ServerName
-            $sqlConnection.Open()
-            $sqlConnection.Close()
-
-            Write-LogMessage -Message 'Success!'
-        }
-    }
-
-    Execute()
-    {
-        if (Test-Path $this.OutputFile) {
-            $answer = Read-Host "Overwrite existing output file? [y/n]"
-            if ($answer -ne 'y') {
-                return
-            }
-            # Delete output file
-            Remove-Item $this.OutputFile
-        }
-
-        $is_first_run = $true
-        $srv_count = $this.ServerList.Count
-        $srv_num = 0
-
-        foreach ($server in $this.ServerList) {
-            $srv_num++
-
-            if ($this.IsServerExcluded($server.ServerName)) {
-                Write-LogMessage -Message ('Excluded server {0} (server {1} of {2}) ...' -f $server.ServerName, $srv_num, $srv_count) -color ([System.ConsoleColor]::([System.ConsoleColor]::Yellow))
-                Write-LogMessage -Message 'Skipped!' -color ([System.ConsoleColor]::([System.ConsoleColor]::Yellow))
-                continue
-            }
-
-            Write-LogMessage -Message ('Selecting database list from server {0} (server {1} of {2}) ...' -f $server.ServerName, $srv_num, $srv_count)
-
-            $sqlConnection = [System.Data.SqlClient.SQLConnection]::new()
-            $sqlConnection.ConnectionString = $this.ConnectionStringTemplate -f $server.ServerName
-            $sqlConnection.Open()
-
-            # Get database list from the server
-            $sqlCommand = [System.Data.SqlClient.SqlCommand]::new($this.DatabaseListQuery, $sqlConnection) 
-            $sqlCommand.CommandType = [System.Data.CommandType]::Text
-            $sqlCommand.CommandTimeout = $this.CommandTimeout
-            $sqlReader = $sqlCommand.ExecuteReader()
-
-            $databaseList = [System.Collections.Generic.List[string]]::new()
-
-            if ($sqlReader.HasRows) {
-                while ($sqlReader.Read()) {
-                    if ($sqlReader['name'] -isnot [DBNull]) {
-                        [void]$databaseList.Add($sqlReader['name'])
-                    }
-                }
-            }
-            $sqlReader.Close()
-
-            Write-LogMessage -Message ('Total {0} database(s) found' -f $databaseList.Count)
-
-            $db_count = $databaseList.Count
-            $db_num = 0
-
-            # get "real" server name
-            $sqlCommand.CommandText = 'select upper(@@servername)'
-            $serverName = [string]$sqlCommand.ExecuteScalar()
-
-            # Run the query on each database and save the result to the file
-            $sqlCommand.CommandText = $this.Command
-
-            foreach ($database in $databaseList) {
-                $db_num++
-
-                Write-LogMessage -Message ('  Running the query on database [{0}] (database {1} of {2}) ...' -f $database, $db_num, $db_count)
-
-                $sqlConnection.ChangeDatabase($database)
-                $sqlReader = $sqlCommand.ExecuteReader()
-
-                $row_count = 0
-                if ($sqlReader.HasRows) {
-                    # Add header for first row
-                    if ($is_first_run) {
-                        'CMSS_GROUP_NAME;CMSS_SERVER_NAME;SERVER_NAME;DATABASE_NAME;' | Out-File $this.OutputFile -Append -NoNewline
-                        for ($i = 0; $i -lt $sqlReader.FieldCount; $i++) {
-                            $sqlReader.GetName($i) + ';' | Out-File $this.OutputFile -Append -NoNewline
-                        }
-                        '' | Out-File $this.OutputFile -Append
-                        $is_first_run = $false
-                    }
-
-                    while ($sqlReader.Read()) {
-                        $row_count ++
-
-                        $server.GroupName + ';' + $server.ServerName + ';' + $serverName + ';' + $database + ';' | Out-File $this.OutputFile -Append -NoNewline
-                        for ($i=0; $i -lt $sqlReader.FieldCount; $i++) {
-                            if ($sqlReader[$i] -isnot [DBNull]) {
-                                $sqlReader[$i].ToString() + ';' | Out-File $this.OutputFile -Append -NoNewline
-                            }
-                            else {
-                                ';' | Out-File $this.OutputFile -Append -NoNewline
-                            }
-                        }
-                        if ($row_count % $this.RowCountThreshold -eq 0) {
-                            Write-LogMessage -Message ('    {0} rows saved ...' -f $row_count)
-                        }
-                        '' | Out-File $this.OutputFile -Append
-                    }
-                }
-                $sqlReader.Close()
-
-                if ($row_count -ge $this.RowCountThreshold) {
-                    Write-LogMessage -Message ('    {0} total rows saved ...' -f $row_count)
-                }
-            }
-            $sqlConnection.Close()
-        }
-        Write-LogMessage -Message 'Success!'
-    }
-
-    [bool]IsServerExcluded([string]$serverName)
-    {
-        return $this.ExcludedServerList.Contains($serverName)
-    }
+		Write-LogMessage -Message ("Checking connection to server: {0} instance: {1}..." `
+			-f $server.CmsName, $server.InstanceName)
+		$connStr = $ConnStrTemplate -f $server.InstanceName, "master"
+		Invoke-Sqlcmd -ConnectionString $connStr -Query "select 1" -AbortOnError | Out-Null
+		Write-LogMessage -Message "Success!"
+	}
 }
 
-[string]$settingsFile = $PSScriptRoot + '\settings.xml'
+function Invoke-CmsServerBatch {
+	[CmdletBinding()]
+	param (
+		[Parameter(Mandatory)]
+		$Config,
 
-try
-{
-    $settings = [ScriptSettings]::new($settingsFile)
+		[Parameter(Mandatory)]
+		[string]$InstanceName,
 
-    $cms = [CMSS]::new($settings.CMSSConnectionString)
-    $cms.ReadServerList($settings.CMSSRootGroupName)
+		[Parameter(Mandatory)]
+		$DatabaseList
+	)
 
-    $ce = [CommandExecutor]::new($cms.ServerList, $settings)
-    if ($settings.CheckConnectivity) {
-        $ce.CheckConnectivity()
-    }
-    $ce.Execute()
-    exit 0
+	$databaseNum = 0
+	foreach ($database in $DatabaseList) {
+		$databaseNum++
+
+		Write-LogMessage -Message ("  Running the batch on database [{0}] (database {1} of {2}) ..." `
+			-f $database, $databaseNum, $DatabaseList.Count)
+
+		$connStr = $Config.ConnStrTemplate -f $InstanceName, $database
+		Invoke-Sqlcmd -ConnectionString $connStr -Query $Config.Cmd -AbortOnError | Out-Null
+	}
 }
-catch [System.Data.SqlClient.SqlException]
-{
-    Write-LogMessage -Message $_.Exception.ToString()
-    exit 1
+
+function Invoke-CmsServerCommand {
+	[CmdletBinding()]
+	param (
+		[Parameter(Mandatory)]
+		$Config,
+
+		[Parameter(Mandatory)]
+		$Server,
+
+		[Parameter(Mandatory)]
+		$DatabaseList,
+
+		[Parameter(Mandatory)]
+		[bool]$AddHeader
+	)
+
+	$rowCountThreshold = 1000
+	$columnSeparator = ";"
+	$addHeader = $AddHeader
+	$sqlConn = $null
+	$sqlCmd = $null
+	$sqlReader = $null
+	$writer = $null
+
+	try {
+		$sqlConn = [SQLConnection]::new()
+        $sqlConn.ConnectionString = $Config.ConnStrTemplate -f $Server.InstanceName, "master"
+        $sqlConn.Open()
+
+		# get a "real" server name
+		$sqlCmd = [SqlCommand]::new("select @@servername", $sqlConn) 
+		$sqlCmd.CommandType = [System.Data.CommandType]::Text
+		$sqlCmd.CommandTimeout = $Config.QueryTimeout
+		$realServerName = ([string]$sqlCmd.ExecuteScalar()).ToUpper()
+
+		$writer = [System.IO.StreamWriter]::new($Config.OutputFile, $true)
+
+		$sqlCmd.CommandText = $Config.Cmd
+		$databaseNum = 0
+		foreach ($database in $DatabaseList) {
+			$databaseNum++
+
+			Write-LogMessage -Message ("  Running the query on database [{0}] (database {1} of {2}) ..." `
+				-f $database, $databaseNum, $DatabaseList.Count)
+
+			$sqlConn.ChangeDatabase($database)
+			$sqlReader = $sqlCmd.ExecuteReader()
+
+			$rowCount = 0
+			if ($sqlReader.HasRows) {
+				# Add header for the first row
+				if ($addHeader) {
+					$line = @(
+						"CMS_GROUP_NAME",
+						"CMS_SERVER_NAME",
+						"INSTANCE_NAME",
+						"DATABASE_NAME"
+					)
+					for ($i = 0; $i -lt $sqlReader.FieldCount; $i++) {
+						$line += $sqlReader.GetName($i).ToUpper()
+					}
+					$writer.WriteLine($line -join $columnSeparator)
+					$addHeader = $false
+				}
+
+				while ($sqlReader.Read()) {
+					$rowCount ++
+
+					$line = @(
+						$Server.GroupName,
+						$Server.CmsName,
+						$realServerName,
+						$database
+					)
+					for ($i = 0; $i -lt $sqlReader.FieldCount; $i++) {
+						if ($sqlReader[$i] -isnot [DBNull]) {
+							$line += $sqlReader[$i].ToString()
+						}
+						else {
+							$line += ""
+						}
+					}
+					$writer.WriteLine($line -join $columnSeparator)
+					if ($rowCount % $rowCountThreshold -eq 0) {
+						Write-LogMessage -Message ("    {0} rows saved ..." -f $rowCount)
+					}
+				}
+			}
+			$sqlReader.Close()
+			$sqlReader.Dispose()
+
+			if ($rowCount -ge $rowCountThreshold) {
+				Write-LogMessage -Message ("    {0} total rows saved ..." -f $rowCount)
+			}
+		}
+	}
+	finally {
+		if ($sqlReader) {
+			$sqlReader.Close()
+			$sqlReader.Dispose()
+		}
+		if ($sqlCmd) {
+			$sqlCmd.Dispose()
+		}
+		if ($sqlConn) {
+			$sqlConn.Close()
+			$sqlConn.Dispose()
+		}
+		if ($writer) {
+			$writer.Close()
+		}
+	}
 }
-catch
-{
-	Write-LogMessage -Message $_.Exception.ToString()
-    Write-LogMessage -Message 'Error occurred. Please check log'
-    exit 1
+
+function Get-DatabaseList {
+	[CmdletBinding()]
+	param (
+		[Parameter(Mandatory)]
+		[string]$ConnStr,
+
+		[string]$Cmd
+	)
+
+	Invoke-Sqlcmd -ConnectionString $ConnStr -Query $Cmd -AbortOnError `
+		| Select-Object -ExpandProperty name
 }
+
+function Invoke-CMS {
+	<#
+	.SYNOPSIS
+		Executes a SQL command or batch across multiple SQL Server instances registered in CMS
+
+	.DESCRIPTION
+		Invoke-CMS connects to a Central Management Server (CMS), retrieves a list of registered SQL Server instances,
+		and executes either a batch script or a query against databases on those instances
+
+		The function supports:
+		- Filtering instances using an exclusion list
+		- Optional connectivity checks before execution
+		- Batch mode. Execute script with one or multiple batches without collecting results
+		- Command mode. Execute query (usually some kind of a SELECT) and export results to a CSV file
+
+	.PARAMETER ConfigFile
+		Path to the JSON configuration file
+
+		The configuration file must include:
+		- CMS connection string
+		- Target CMS group name
+		- Command or batch script file paths
+		- Database list query
+		- Optional settings such as exclusions and timeouts
+
+	.EXAMPLE
+		Invoke-CMS -ConfigFile ".\config.json"
+	#>
+	[CmdletBinding(SupportsShouldProcess = $true)]
+	param (
+		[Parameter(Mandatory)]
+		[string]$ConfigFile
+	)
+
+	Set-StrictMode -Version Latest
+
+	try {
+		$config = Read-Config -ConfigFile $ConfigFile
+		$serverList = @(Get-CmsServerList -ConnStr $config.CmsConnStr `
+			-GroupName $config.CmsGroupName)
+
+		foreach ($server in $serverList) {
+			if ($config.ExcludeCmsNames.Contains($server.CmsName)) {
+				$server.Excluded = $true
+			}
+		}
+
+		$dryRun = $true
+		$connStrParser = [SqlConnectionStringBuilder]::new($config.CmsConnStr)
+		$mode = if ($config.BatchMode) { "Batch" } else { "Command" }
+		$target = "Using CMS: {0}, Mode: {1}" -f $connStrParser.DataSource, $mode
+
+		if ($PSCmdlet.ShouldProcess($target)) {
+			$dryRun = $false
+		}
+		else {
+			Write-Verbose "Dry run"
+		}
+
+		if ($config.TestConnectivity) {
+			Test-Connectivity -ConnStrTemplate $config.ConnStrTemplate -ServerList $serverList
+		}
+
+		if (-not $dryRun) {
+			if (-not $config.BatchMode) {
+				if (Test-Path $config.OutputFile) {
+					$answer = Read-Host "Overwrite existing output file? [y/n]"
+					if ($answer -ne "y") {
+						return
+					}
+					# Delete output file
+					Remove-Item $config.OutputFile
+				}
+			}
+
+			$serverNum = 0
+			$addHeader = $true
+			foreach ($server in $serverList) {
+				$serverNum++
+
+				if ($server.Excluded) {
+					Write-LogMessage -Message ("Skipping excluded server: {0} instance: {1}" `
+						-f $server.CmsName, $server.InstanceName)
+					continue
+				}
+
+				Write-LogMessage -Message ("Selecting database list from server {0} (server {1} of {2}) ..." `
+					-f $server.CmsName, $serverNum, $serverList.Count)
+
+
+				$connStr = $config.ConnStrTemplate -f $server.InstanceName, "master"
+				$databaseList = @(Get-DatabaseList -ConnStr $connStr -Cmd $config.DbListQuery)
+
+				Write-LogMessage -Message ("Total {0} database(s) found" -f $databaseList.Count)
+
+				if ($databaseList.Count -eq 0) {
+					continue
+				}
+
+				if ($config.BatchMode) {
+					Invoke-CmsServerBatch -Config $config -InstanceName $server.InstanceName `
+						-DatabaseList $databaseList
+				}
+				else {
+					Invoke-CmsServerCommand -Config $config -Server $server `
+						-DatabaseList $databaseList -AddHeader $addHeader
+					$addHeader = $false
+				}
+			}
+		}
+	}
+	catch {
+		Write-Error "Failed to invoke CMS: $_"
+		throw
+	}
+}
+
+Clear-Host
+
+[string]$configFile = Join-Path $PSScriptRoot "config.json"
+Invoke-CMS -ConfigFile $configFile `
+	-WhatIf `
+	-Verbose
