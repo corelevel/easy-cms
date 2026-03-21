@@ -37,7 +37,7 @@ function Read-Config {
 
 	$dbListFile = $json.dbListFile
 	if ([string]::IsNullOrEmpty($dbListFile)) {
-		$dbListFile = Join-Path $PSScriptRoot "database_list_query.sql"
+		$dbListFile = Join-Path $PSScriptRoot "database_list.sql"
 	}
 	if (-not (Test-Path $dbListFile -PathType Leaf)) {
 		throw "Database list query file not found: $dbListFile"

@@ -70,7 +70,7 @@ Install-Module SqlServer
 
 ## Overriding Default File Paths
 By default, the script looks for the following files in the script directory:
-- *database_list_query.sql*
+- *database_list.sql*
 - *command.sql*
 - *batch.sql*
 - *output_{yyyy-MM-dd_HH-mm-ss}.csv* (auto-generated)
@@ -90,7 +90,7 @@ You can override these defaults by specifying custom paths in the configuration 
 	- Set *cmsConnStr*
 	- Set *cmsGroupName*
 	- Set *connStrTemplate*
-- Modify *database_list_query.sql* to define a filter for databases on each server
+- Modify *database_list.sql* to define a filter for databases on each server
 - Modify *command.sql* with your query
 - Run *cms.ps1* script
 
