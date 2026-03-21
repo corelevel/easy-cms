@@ -73,7 +73,7 @@ By default, the script looks for the following files in the script directory:
 - *database_list_query.sql*
 - *command.sql*
 - *batch.sql*
-- *output_{0:yyyy-MM-dd_HH-mm-ss}.csv* (auto-generated)
+- *output_{yyyy-MM-dd_HH-mm-ss}.csv* (auto-generated)
 
 You can override these defaults by specifying custom paths in the configuration file. For example:
 ```json
