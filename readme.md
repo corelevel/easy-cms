@@ -28,10 +28,10 @@ Install-Module SqlServer
 - All settings are defined in a *config.json* file. Example *config.json*
 ```json
 {
-    "cmsConnStr": "Data Source=CMS-SERVER;Initial Catalog=msdb;Integrated Security=True;Application Name=cmss;",
+    "cmsConnStr": "Data Source=CMS-SERVER;Initial Catalog=msdb;Integrated Security=True;Application Name=easy-cms;",
     "cmsGroupName": "MyGroupName",
     "batchMode": false,
-    "connStrTemplate": "Data Source={0};Initial Catalog={1};Integrated Security=True;Application Name=cmss;",
+    "connStrTemplate": "Data Source={0};Initial Catalog={1};Integrated Security=True;Application Name=easy-cms;",
     "testConnectivity": true,
     "queryTimeout": 25,
     "dbListFile": "",

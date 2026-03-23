@@ -5,7 +5,7 @@ function Write-LogMessage {
 		[parameter(Mandatory)]
 		[string]$Message
 	)
-	$timeStamp = (Get-Date).ToString("[MM/dd/yy HH:mm:ss.ff]")
+	$timeStamp = (Get-Date).ToString('[MM/dd/yy HH:mm:ss.ff]')
 	Write-Verbose "$timeStamp $Message"
 }
 
@@ -37,7 +37,7 @@ function Read-Config {
 
 	$dbListFile = $json.dbListFile
 	if ([string]::IsNullOrEmpty($dbListFile)) {
-		$dbListFile = Join-Path $PSScriptRoot "database_list.sql"
+		$dbListFile = Join-Path $PSScriptRoot 'database_list.sql'
 	}
 	if (-not (Test-Path $dbListFile -PathType Leaf)) {
 		throw "Database list query file not found: $dbListFile"
@@ -47,7 +47,7 @@ function Read-Config {
 	if ($config.BatchMode) {
 		$batchFile = $json.batchFile
 		if ([string]::IsNullOrEmpty($batchFile)) {
-			$batchFile = Join-Path $PSScriptRoot "batch.sql"
+			$batchFile = Join-Path $PSScriptRoot 'batch.sql'
 		}
 		if (-not (Test-Path $batchFile -PathType Leaf)) {
 			throw "Batch file not found: $batchFile"
@@ -57,7 +57,7 @@ function Read-Config {
 	else {
 		$cmdFile = $json.cmdFile
 		if ([string]::IsNullOrEmpty($cmdFile)) {
-			$cmdFile = Join-Path $PSScriptRoot "command.sql"
+			$cmdFile = Join-Path $PSScriptRoot 'command.sql'
 		}
 		if (-not (Test-Path $cmdFile -PathType Leaf)) {
 			throw "Command file not found: $cmdFile"
@@ -66,7 +66,8 @@ function Read-Config {
 	}
 
 	if ([string]::IsNullOrEmpty($json.outputFile)) {
-		$config.OutputFile = Join-Path $PSScriptRoot ("output_{0:yyyy-MM-dd_HH-mm-ss}.csv" -f (Get-Date))
+		$config.OutputFile = Join-Path $PSScriptRoot `
+			('output_{0:yyyy-MM-dd_HH-mm-ss}.csv' -f (Get-Date))
 	}
 	else {
 		$config.OutputFile = $json.outputFile
@@ -93,7 +94,7 @@ function Get-CmsServerList {
 		$sqlConn.ConnectionString = $ConnStr
 		$sqlConn.Open()
 
-        [string]$command = @"
+        [string]$command = @'
 set nocount on
 create table #groups (server_group_id int not null, [name] sysname not null, [path] nvarchar(4000) not null);
 
@@ -119,20 +120,20 @@ from	#groups t
 		join dbo.sysmanagement_shared_registered_servers_internal se
 		on se.server_group_id = t.server_group_id
 order by se.server_name
-"@
+'@
 
 		$sqlCmd = [SqlCommand]::new($command, $sqlConn)
 		$sqlCmd.CommandType = [System.Data.CommandType]::Text
-		$pGroupName = $sqlCmd.Parameters.Add("@name", [System.Data.SqlDbType]::VarChar, 128)
-		$pGroupName.Value = if ([string]::IsNullOrEmpty($GroupName)) { "DatabaseEngineServerGroup" } else { $GroupName }
+		$pGroupName = $sqlCmd.Parameters.Add('@name', [System.Data.SqlDbType]::VarChar, 128)
+		$pGroupName.Value = if ([string]::IsNullOrEmpty($GroupName)) { 'DatabaseEngineServerGroup' } else { $GroupName }
 		$sqlReader = $sqlCmd.ExecuteReader()
 
         if ($sqlReader.HasRows) {
             while ($sqlReader.Read()) {
 				[PSCustomObject]@{
-					CmsName = $sqlReader["name"].ToLower()
-					InstanceName = $sqlReader["server_name"].ToLower()
-					GroupName = $sqlReader["group_name"].ToLower()
+					CmsName = $sqlReader['name'].ToLower()
+					InstanceName = $sqlReader['server_name'].ToLower()
+					GroupName = $sqlReader['group_name'].ToLower()
 					Excluded = $false
 				}
             }
@@ -157,15 +158,15 @@ function Test-Connectivity {
 
 	foreach ($server in $serverList) {
 		if ($server.Excluded) {
-			Write-LogMessage -Message ("Skipping excluded server: {0} instance: {1}" `
-				-f $server.CmsName, $server.InstanceName)
+			Write-LogMessage -Message ("Skipping excluded server: $($server.CmsName) " +
+				"instance: $($server.InstanceName)")
 			continue
 		}
 
-		Write-LogMessage -Message ("Checking connection to server: {0} instance: {1}..." `
-			-f $server.CmsName, $server.InstanceName)
-		$connStr = $ConnStrTemplate -f $server.InstanceName, "master"
-		Invoke-Sqlcmd -ConnectionString $connStr -Query "select 1" -AbortOnError | Out-Null
+		Write-LogMessage -Message ("Checking connection to server: $($server.CmsName) " +
+			"instance: $($server.InstanceName)...")
+		$connStr = $ConnStrTemplate -f $server.InstanceName, 'master'
+		Invoke-Sqlcmd -ConnectionString $connStr -Query 'select 1' -AbortOnError | Out-Null
 	}
 }
 
@@ -186,8 +187,8 @@ function Invoke-CmsServerBatch {
 	foreach ($database in $DatabaseList) {
 		$databaseNum++
 
-		Write-LogMessage -Message ("  Running batch file on database {0} (database {1} of {2}) ..." `
-			-f $database, $databaseNum, $DatabaseList.Count)
+		Write-LogMessage -Message ("  Running batch file on database $database " +
+			"(database $databaseNum of $($DatabaseList.Count)) ...")
 
 		$connStr = $Config.ConnStrTemplate -f $InstanceName, $database
 		Invoke-Sqlcmd -ConnectionString $connStr -Query $Config.Cmd -AbortOnError | Out-Null
@@ -211,7 +212,7 @@ function Invoke-CmsServerCommand {
 	)
 
 	$rowCountThreshold = 1000
-	$columnSeparator = ";"
+	$columnSeparator = ';'
 	$addHeader = $AddHeader
 	$sqlConn = $null
 	$sqlCmd = $null
@@ -220,11 +221,11 @@ function Invoke-CmsServerCommand {
 
 	try {
 		$sqlConn = [SQLConnection]::new()
-        $sqlConn.ConnectionString = $Config.ConnStrTemplate -f $Server.InstanceName, "master"
+        $sqlConn.ConnectionString = $Config.ConnStrTemplate -f $Server.InstanceName, 'master'
         $sqlConn.Open()
 
 		# get a "real" server name
-		$sqlCmd = [SqlCommand]::new("select @@servername", $sqlConn) 
+		$sqlCmd = [SqlCommand]::new('select @@servername', $sqlConn) 
 		$sqlCmd.CommandType = [System.Data.CommandType]::Text
 		$sqlCmd.CommandTimeout = $Config.QueryTimeout
 		$realServerName = ([string]$sqlCmd.ExecuteScalar()).ToUpper()
@@ -236,8 +237,8 @@ function Invoke-CmsServerCommand {
 		foreach ($database in $DatabaseList) {
 			$databaseNum++
 
-			Write-LogMessage -Message ("  Running command file on database {0} (database {1} of {2}) ..." `
-				-f $database, $databaseNum, $DatabaseList.Count)
+			Write-LogMessage -Message ("  Running command file on database $database " + `
+				"(database $databaseNum of $($DatabaseList.Count)) ...")
 
 			$sqlConn.ChangeDatabase($database)
 			$sqlReader = $sqlCmd.ExecuteReader()
@@ -247,10 +248,10 @@ function Invoke-CmsServerCommand {
 				# Add header for the first row
 				if ($addHeader) {
 					$line = @(
-						"CMS_GROUP_NAME",
-						"CMS_SERVER_NAME",
-						"INSTANCE_NAME",
-						"DATABASE_NAME"
+						'CMS_GROUP_NAME',
+						'CMS_SERVER_NAME',
+						'INSTANCE_NAME',
+						'DATABASE_NAME'
 					)
 					for ($i = 0; $i -lt $sqlReader.FieldCount; $i++) {
 						$line += $sqlReader.GetName($i).ToUpper()
@@ -273,12 +274,12 @@ function Invoke-CmsServerCommand {
 							$line += $sqlReader[$i].ToString()
 						}
 						else {
-							$line += ""
+							$line += ''
 						}
 					}
 					$writer.WriteLine($line -join $columnSeparator)
 					if ($rowCount % $rowCountThreshold -eq 0) {
-						Write-LogMessage -Message ("    {0} rows saved ..." -f $rowCount)
+						Write-LogMessage -Message "    $rowCount rows saved ..."
 					}
 				}
 			}
@@ -286,7 +287,7 @@ function Invoke-CmsServerCommand {
 			$sqlReader.Dispose()
 
 			if ($rowCount -ge $rowCountThreshold) {
-				Write-LogMessage -Message ("    {0} total rows saved ..." -f $rowCount)
+				Write-LogMessage -Message "    $rowCount total rows saved ..."
 			}
 		}
 	}
@@ -370,14 +371,14 @@ function Invoke-EasyCMS {
 
 		$dryRun = $true
 		$connStrParser = [SqlConnectionStringBuilder]::new($config.CmsConnStr)
-		$mode = if ($config.BatchMode) { "Batch" } else { "Command" }
-		$target = "CMS: {0}, Mode: {1}" -f $connStrParser.DataSource, $mode
+		$mode = if ($config.BatchMode) { 'Batch' } else { 'Command' }
+		$target = "CMS: $($connStrParser.DataSource), Mode: $mode"
 
 		if ($PSCmdlet.ShouldProcess($target)) {
 			$dryRun = $false
 		}
 		else {
-			Write-Verbose "Dry run"
+			Write-Verbose 'Dry run'
 		}
 
 		if ($config.TestConnectivity) {
@@ -387,8 +388,8 @@ function Invoke-EasyCMS {
 		if (-not $dryRun) {
 			if (-not $config.BatchMode) {
 				if (Test-Path $config.OutputFile) {
-					$answer = Read-Host "Overwrite existing output file? [y/n]"
-					if ($answer -ne "y") {
+					$answer = Read-Host 'Overwrite existing output file? [y/n]'
+					if ($answer -ne 'y') {
 						return
 					}
 					# Delete output file
@@ -402,19 +403,18 @@ function Invoke-EasyCMS {
 				$serverNum++
 
 				if ($server.Excluded) {
-					Write-LogMessage -Message ("Skipping excluded server: {0} instance: {1}" `
-						-f $server.CmsName, $server.InstanceName)
+					Write-LogMessage -Message ("Skipping excluded server: $($server.CmsName) " +
+						"instance: $($server.InstanceName)")
 					continue
 				}
 
-				Write-LogMessage -Message ("Selecting database list from server {0} (server {1} of {2}) ..." `
-					-f $server.CmsName, $serverNum, $serverList.Count)
+				Write-LogMessage -Message ("Selecting database list from server $($server.CmsName) " +
+					"(server $serverNum of $($serverList.Count)) ...")
 
-
-				$connStr = $config.ConnStrTemplate -f $server.InstanceName, "master"
+				$connStr = $config.ConnStrTemplate -f $server.InstanceName, 'master'
 				$databaseList = @(Get-DatabaseList -ConnStr $connStr -Cmd $config.DbListQuery)
 
-				Write-LogMessage -Message ("Total {0} database(s) found" -f $databaseList.Count)
+				Write-LogMessage -Message "Total $($databaseList.Count) database(s) found"
 
 				if ($databaseList.Count -eq 0) {
 					continue
@@ -440,7 +440,7 @@ function Invoke-EasyCMS {
 
 Clear-Host
 
-[string]$configFile = Join-Path $PSScriptRoot "config.json"
+$configFile = Join-Path $PSScriptRoot 'config.json'
 Invoke-EasyCMS -ConfigFile $configFile `
 	-Verbose `
 	#-WhatIf

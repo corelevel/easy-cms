@@ -1,8 +1,8 @@
 {
-    "cmsConnStr": "Data Source=(local);Initial Catalog=msdb;Connection Timeout=5;Encrypt=False;User Id=sa;Password=P1s-Unsee-Me;Application Name=cmss;",
+    "cmsConnStr": "Data Source=(local);Initial Catalog=msdb;Connection Timeout=5;Encrypt=False;User Id=sa;Password=P1s-Unsee-Me;Application Name=easy-cms;",
     "cmsGroupName": "MyGroupName",
     "batchMode": false,
-    "connStrTemplate": "Data Source={0};Initial Catalog={1};Connection Timeout=5;Encrypt=False;User Id=sa;Password=P1s-Unsee-Me;Application Name=cmss;",
+    "connStrTemplate": "Data Source={0};Initial Catalog={1};Connection Timeout=5;Encrypt=False;User Id=sa;Password=P1s-Unsee-Me;Application Name=easy-cms;",
     "testConnectivity": true,
     "queryTimeout": 25,
     "dbListFile": "",
