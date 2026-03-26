@@ -3,8 +3,14 @@ set nocount on
  
 /*
 Just an example
-Selects all user databases and skips databases on AlwaysOn secondary replicas
 */
+
+select	[name]
+from	sys.databases
+where [name] = N'master'
+
+/*
+-- Selects all user databases and skips databases on AlwaysOn secondary replicas
 select	[name]
 from	sys.databases
 where 1 = 1
@@ -22,3 +28,4 @@ from	sys.dm_hadr_availability_group_states st
 where 1 = 1
 	and db.[database_name] not in (N'distribution')
 	and st.primary_replica = @@servername
+*/
