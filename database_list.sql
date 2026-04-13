@@ -4,7 +4,6 @@ set nocount on
 /*
 Just an example
 */
-
 select	[name]
 from	sys.databases
 where [name] = N'master'

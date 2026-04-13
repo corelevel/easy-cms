@@ -140,9 +140,9 @@ order by se.server_name
         }
 	}
 	finally {
-		if ($sqlReader) { $sqlReader.Close(); $sqlReader.Dispose() }
-		if ($sqlCmd) { $sqlCmd.Dispose() }
-		if ($sqlConn) { $sqlConn.Close(); $sqlConn.Dispose() }
+		if ($null -ne $sqlReader) { $sqlReader.Close(); $sqlReader.Dispose() }
+		if ($null -ne $sqlCmd) { $sqlCmd.Dispose() }
+		if ($null -ne $sqlConn) { $sqlConn.Close(); $sqlConn.Dispose() }
 	}
 }
 
@@ -292,18 +292,18 @@ function Invoke-CmsServerCommand {
 		}
 	}
 	finally {
-		if ($sqlReader) {
+		if ($null -ne $sqlReader) {
 			$sqlReader.Close()
 			$sqlReader.Dispose()
 		}
-		if ($sqlCmd) {
+		if ($null -ne $sqlCmd) {
 			$sqlCmd.Dispose()
 		}
-		if ($sqlConn) {
+		if ($null -ne $sqlConn) {
 			$sqlConn.Close()
 			$sqlConn.Dispose()
 		}
-		if ($writer) {
+		if ($null -ne $writer) {
 			$writer.Close()
 		}
 	}
